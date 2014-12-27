@@ -1,0 +1,4 @@
+#ignore my R files
+*.R
+#ignore my secrets file
+secrets.txt
