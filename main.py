@@ -2,18 +2,19 @@
 # -*- coding: utf-8 -*-
 #Beth Zabinski wrote this
 
-
-import sys
 from tweepy import API
 from tweepy import AppAuthHandler
 from tweepy import OAuthHandler
 from tweepy import Stream
 from tweepy.streaming import StreamListener
+import sys
 import re
 import json
+from pymongo import MongoClient
 
 def main(argv):
 
+    global posts
     global consumer_key
     global consumer_secret
     global access_token
@@ -62,6 +63,11 @@ def main(argv):
         auth.apply_auth()
         runTest(auth, geocode)
     elif mode == 1:
+        #db stuff
+        client = MongoClient()
+        db = client.twitter
+        posts = db.posts
+        #tweepy stuff
         auth = OAuthHandler(consumer_key, consumer_secret)
         auth.set_access_token(access_token, access_secret)
         runCont(auth, geocode)
@@ -129,7 +135,11 @@ def runCont(auth, geocode):
 class StdOutListener(StreamListener):
     def on_data(self, data):
         print("Found something")
-        decoded = json.loads(data)
+        try:
+            decoded = json.loads(data)
+        except:
+            print("JSON couldn't be loaded")
+
         name = decoded['user']['name'].encode("utf-8", errors='ignore')
         user_id = decoded['user']['id'] #.encode("utf-8", errors='ignore')
         tweet_text = decoded['text'].encode("utf-8", errors='ignore')
@@ -138,24 +148,36 @@ class StdOutListener(StreamListener):
         tweet_count = 0
         retweet_count = 0
 
-        auth = AppAuthHandler(consumer_key, consumer_secret)
-        auth.apply_auth()
-        api = API(auth)
+        try:
+            auth = AppAuthHandler(consumer_key, consumer_secret)
+            auth.apply_auth()
+            api = API(auth)
 
-        users_tweets = api.user_timeline(id=user_id, count="500")
-        for users_tweet in users_tweets:
-            if (re.search(r'flash[ ]?mob[s]?', users_tweet.text, flags=re.IGNORECASE)):
-                tweet_count = tweet_count + 1
-                #Check how many times the past tweets have been retweeted
-                retweet_count = retweet_count + len(api.retweets(id=users_tweet.id))
+            users_tweets = api.user_timeline(id=user_id, count="500")
+            for users_tweet in users_tweets:
+                if (re.search(r'flash[ ]?mob[s]?', users_tweet.text, flags=re.IGNORECASE)):
+                    tweet_count = tweet_count + 1
+                    #Check how many times the past tweets have been retweeted
+                    retweet_count = retweet_count + len(api.retweets(id=users_tweet.id))
 
-        #Checks how many followers this person has
-        followers_count = len(api.followers_ids(id=user_id))
+            #Checks how many followers this person has
+            followers_count = len(api.followers_ids(id=user_id))
+
+        except:
+            print("Something went wrong when gathering more data")
+            return True
 
         print("User ID:       ", user_id)
         print("Tweet count:   ", tweet_count)
         print("retweet_count: ", retweet_count)
         print()
+
+        post = {"user_id": user_id,
+                "tweet": tweet_text.decode(encoding='utf-8',errors='ignore'),
+                "tweet_count": tweet_count,
+                "retweet_count": retweet_count}
+
+        posts.insert(post)
 
         return True
     def on_error(self, status):
